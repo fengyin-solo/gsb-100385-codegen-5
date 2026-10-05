@@ -5,7 +5,11 @@ export type EntryRow = {
   status: string
   pending: boolean
   abnormal: boolean
-  [field: string]: string | number | boolean
+  /** 现场修订版本号：外业设备每改一条就 +1，交换封包用它做冲突裁决。 */
+  _rev?: number
+  /** 最近一次现场修改的时间（ISO 字符串），版本号相同时作为裁决辅助依据。 */
+  _updatedAt?: string
+  [field: string]: string | number | boolean | undefined
 }
 
 export type ModuleMeta = {

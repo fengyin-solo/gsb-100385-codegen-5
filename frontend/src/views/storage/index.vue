@@ -43,7 +43,7 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in columns" :key="column">{{ formatCell(column, row) }}</td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
@@ -78,14 +78,24 @@ import {
   listEntries,
   moduleMeta,
   runAction as applyAction,
+  shelfAvailableSpace,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('storage')
-const columns = ["架位编号", "库房名称", "存放器物类别", "架位层数", "容纳件数", "当前件数", "管理人", "架位状态"]
+const columns = ["架位编号", "库房名称", "存放器物类别", "架位层数", "容纳件数", "当前件数", "可用空间", "管理人", "架位状态"]
 const actions = ["存放器物", "调整整理", "临时封存"]
 const statuses = ["正常使用", "已满", "待整理", "临时封存"]
 const stats = [{"label": "架位总数", "value": 0}, {"label": "已满架位", "value": 0}, {"label": "可用架位", "value": 0}]
+
+// 可用空间是派生字段（容纳件数 - 当前件数），由遗物入库联动更新；旧数据算不出来时显示「—」。
+function formatCell(column: string, row: EntryRow): string | number {
+  if (column === '可用空间') {
+    const available = shelfAvailableSpace(row)
+    return available === null ? '—' : available
+  }
+  return (row[column] as string | number) ?? '—'
+}
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
