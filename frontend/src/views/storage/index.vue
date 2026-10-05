@@ -36,14 +36,16 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th v-for="column in columns" :key="column">{{ column }}</th>
+          <th v-for="column in displayColumns" :key="column">{{ column }}</th>
           <th>当前状态</th>
           <th>可执行动作</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in displayColumns" :key="column">
+            {{ column === '可用空间' ? availableSpace(row) : (row[column] ?? '—') }}
+          </td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
@@ -58,7 +60,7 @@
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 2" class="empty-state">暂无库房管理数据，可先登记库房架位</td>
+          <td :colspan="displayColumns.length + 2" class="empty-state">暂无库房管理数据，可先登记库房架位</td>
         </tr>
       </tbody>
     </table>
@@ -83,9 +85,20 @@ import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('storage')
 const columns = ["架位编号", "库房名称", "存放器物类别", "架位层数", "容纳件数", "当前件数", "管理人", "架位状态"]
+// 可用空间不落地存储，由「容纳件数 − 当前件数」派生：入库事务更新当前件数时它必然同步变化。
+const displayColumns = [...columns, '可用空间']
 const actions = ["存放器物", "调整整理", "临时封存"]
 const statuses = ["正常使用", "已满", "待整理", "临时封存"]
 const stats = [{"label": "架位总数", "value": 0}, {"label": "已满架位", "value": 0}, {"label": "可用架位", "value": 0}]
+
+function availableSpace(row: EntryRow): string {
+  const capacity = Number(row['容纳件数'])
+  const current = Number(row['当前件数'])
+  if (!Number.isFinite(capacity) || !Number.isFinite(current)) {
+    return '—'
+  }
+  return String(capacity - current)
+}
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)

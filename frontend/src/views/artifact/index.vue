@@ -11,6 +11,47 @@
       </div>
     </header>
 
+    <section class="exchange-panel">
+      <h3 class="exchange-title">外业交换封包</h3>
+      <p class="exchange-desc">
+        按器物编号、发掘区、出土层位、登记状态挑选遗物，生成带 SHA-256 校验摘要的离线封包文件；
+        换一台设备导入后继续清洗、编号、入库。同一封包反复导入不会重复登记，也不会漏掉现场改过的记录；
+        封包与本地版本冲突时按「修订号高者优先 → 状态更靠后者优先 → 修改时间更晚者优先 → 仍并列保留本地」裁决。
+      </p>
+      <form class="filter-bar" @submit.prevent="buildPackage">
+        <label class="filter-item">
+          <span>器物编号</span>
+          <input v-model="exchangeFilters.器物编号" placeholder="如 ARTI-0001" />
+        </label>
+        <label class="filter-item">
+          <span>发掘区</span>
+          <input v-model="exchangeFilters.发掘区" placeholder="按出土探方/发掘区检索" />
+        </label>
+        <label class="filter-item">
+          <span>出土层位</span>
+          <input v-model="exchangeFilters.出土层位" placeholder="按出土层位检索" />
+        </label>
+        <label class="filter-item">
+          <span>登记状态</span>
+          <select v-model="exchangeFilters.登记状态">
+            <option value="">全部状态</option>
+            <option v-for="status in statuses" :key="status" :value="status">{{ status }}</option>
+          </select>
+        </label>
+        <button class="btn primary" type="submit">生成封包</button>
+      </form>
+      <div class="import-bar">
+        <input type="file" accept=".json,application/json" @change="onPackageFile" />
+        <button class="btn" type="button" :disabled="!packageText" @click="runImport">导入封包</button>
+      </div>
+      <p v-if="exchangeMessage" class="exchange-message">{{ exchangeMessage }}</p>
+      <ul v-if="importConflicts.length" class="conflict-list">
+        <li v-for="item in importConflicts" :key="item.器物编号">
+          {{ item.器物编号 }}：{{ item.decision }}
+        </li>
+      </ul>
+    </section>
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -75,10 +116,17 @@ import { computed, onMounted, ref } from 'vue'
 
 import {
   downloadEntries,
+  downloadTextFile,
   listEntries,
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import {
+  buildExchangePackage,
+  importExchangePackage,
+  type ExchangeFilters,
+  type ImportConflict,
+} from '@/api/exchange'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('artifact')
@@ -99,6 +147,11 @@ const statusSummary = computed(() =>
   })),
 )
 
+const exchangeFilters = ref<ExchangeFilters>({ 器物编号: '', 发掘区: '', 出土层位: '', 登记状态: '' })
+const exchangeMessage = ref('')
+const importConflicts = ref<ImportConflict[]>([])
+const packageText = ref('')
+
 function resetFilters() {
   filters.value = {}
   reload()
@@ -110,6 +163,46 @@ function exportRows() {
 
 function openCreate() {
   errorMessage.value = '出土遗物登记入口尚未接入审批流'
+}
+
+function buildPackage() {
+  errorMessage.value = ''
+  const pkg = buildExchangePackage(exchangeFilters.value)
+  downloadTextFile(`${pkg.packageId}.json`, JSON.stringify(pkg, null, 2), 'application/json;charset=utf-8')
+  exchangeMessage.value = `已生成封包 ${pkg.packageId}，共 ${pkg.count} 件，校验摘要 ${pkg.checksum.slice(0, 16)}…`
+  importConflicts.value = []
+}
+
+function onPackageFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) {
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    packageText.value = String(reader.result ?? '')
+    exchangeMessage.value = `已读取封包文件 ${file.name}，点击「导入封包」执行`
+    importConflicts.value = []
+  }
+  reader.onerror = () => {
+    exchangeMessage.value = `封包文件 ${file.name} 读取失败`
+  }
+  reader.readAsText(file)
+}
+
+function runImport() {
+  errorMessage.value = ''
+  try {
+    const report = importExchangePackage(packageText.value)
+    importConflicts.value = report.conflicts
+    exchangeMessage.value = `封包 ${report.packageId} 导入完成：新增 ${report.inserted} 件，更新 ${report.updated} 件，无变化 ${report.unchanged} 件，保留本地 ${report.keptLocal} 件`
+    packageText.value = ''
+    reload()
+  } catch (error) {
+    importConflicts.value = []
+    exchangeMessage.value = error instanceof Error ? error.message : '封包导入失败，本地数据未改动'
+  }
 }
 
 function runAction(action: string, row: EntryRow) {
